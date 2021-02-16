@@ -1,0 +1,14 @@
+{
+    "version": 1,
+    "cols": 1,
+    "align": "fill",
+    "widgets": [
+	{
+	    "type": "pixmap",
+	    "w": 100,
+	    "h": 100,
+//	    "on_event": "pixmap_on_event",
+	    "uid": "pixmap"
+ 	},
+    ]
+}
