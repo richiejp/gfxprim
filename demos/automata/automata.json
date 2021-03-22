@@ -5,9 +5,10 @@
     "widgets": [
 	{
 	    "type": "pixmap",
+	    "on_event": "pixmap_on_event",
+	    "align": "fill",
 	    "w": 100,
 	    "h": 100,
-//	    "on_event": "pixmap_on_event",
 	    "uid": "pixmap"
  	},
     ]
