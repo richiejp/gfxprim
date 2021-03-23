@@ -3,6 +3,7 @@
     "cols": 1,
     "rows": 2,
     "align": "fill",
+    "rfill": "10, 1",
     "widgets": [
 	{
 	    "type": "pixmap",
@@ -13,12 +14,22 @@
 	    "uid": "pixmap"
  	},
 	{
-	    "uid": "rule",
-	    "type": "tbox",
-	    "on_event": "rule_tbox_on_event",
-	    "len": 3,
-	    "max_len": 3,
-	    "text": "110",
-	},
+	    "align": "fill",
+	    "cols": 2,
+	    "widgets": [
+		{
+		    "type": "label",
+		    "text": "Rule No.",
+		},
+		{
+		    "uid": "rule",
+		    "type": "tbox",
+		    "on_event": "rule_tbox_on_event",
+		    "len": 3,
+		    "max_len": 3,
+		    "text": "110",
+		},
+	    ]
+	}
     ]
 }

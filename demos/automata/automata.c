@@ -38,6 +38,11 @@ struct ca1d_rule {
 	struct ca1d_pattern patterns[8];
 } static ca1d_rules[256];
 
+/* Number of bitfields in a row */
+static size_t width = 20;
+/* Number of steps in the simulation */
+static size_t height = 1280;
+/* Matrix of bitfields representing the automata's state over time */
 static uint64_t *steps;
 static int rule = 110;
 static void *uids;
@@ -60,12 +65,13 @@ static void ca1d_preprocess(void)
 	}
 }
 
-static inline uint64_t ca1d_rule_apply(const struct ca1d_rule *rule, uint64_t c)
+static inline uint64_t ca1d_rule_apply(const struct ca1d_rule *rule,
+				       uint64_t c_prev, uint64_t c, uint64_t c_next)
 {
 	int i;
 	const struct ca1d_pattern *p;
-	uint64_t l = (c >> 1) ^ (c << 63);
-	uint64_t r = (c << 1) ^ (c >> 63);
+	uint64_t l = (c >> 1) ^ (c_prev << 63);
+	uint64_t r = (c << 1) ^ (c_next >> 63);
 	uint64_t cn = 0;
 
 	for (i = 0; i < 8; i++) {
@@ -78,34 +84,70 @@ static inline uint64_t ca1d_rule_apply(const struct ca1d_rule *rule, uint64_t c)
 	return cn;
 }
 
-static void ca1d_run(const struct ca1d_rule *rule)
+static void ca1d_rule_apply_row(const struct ca1d_rule *r, int step, size_t len)
 {
 	size_t i;
+	const uint64_t *row = steps + gp_matrix_idx(len, step, 0);
+	uint64_t *next = steps + gp_matrix_idx(len, step + 1, 0);
 
-	steps[0] = 1UL << 31;
+	next[0] = ca1d_rule_apply(r, row[len - 1], row[0], row[GP_MIN(1, len - 1)]);
 
-	for (i = 0; i < gp_vec_len(steps) - 1; i++)
-		steps[i + 1] = ca1d_rule_apply(rule, steps[i]);
+	for (i = 1; i < len - 1; i++)
+		next[i] = ca1d_rule_apply(r, row[i - 1], row[i], row[i + 1]);
+
+	if (i < len)
+		next[i] = ca1d_rule_apply(r, row[i - 1], row[i], row[0]);
+}
+
+static void ca1d_run(void)
+{
+	const struct ca1d_rule *r = ca1d_rules + rule;
+	size_t i;
+
+	steps[width / 2] = 1UL << (63 - (width * 32) % 64);
+
+	for (i = 0; i < height - 1; i++)
+		ca1d_rule_apply_row(r, i, width);
+
 }
 
 static void fill_pixmap(gp_pixmap *p)
 {
-	size_t i, j;
-	gp_coord cw = p->w / 64 + 1;
-	gp_coord ch = p->h / gp_vec_len(steps) + 1;
+	size_t i, j, k;
+	gp_coord cw = p->w / (64 * width) + 1;
+	gp_coord ch = p->h / height + 1;
+	gp_pixel fill = gp_rgb_to_pixmap_pixel(0xff, 0x00, 0x00, p);
 	gp_pixel bg = gp_rgb_to_pixmap_pixel(0xff, 0xff, 0xff, p);
 	gp_pixel fg = gp_rgb_to_pixmap_pixel(0x00, 0x00, 0x00, p);
+	gp_pixel px;
+	uint64_t s, t;
 
-	gp_fill(p, bg);
+	s = gp_time_stamp();
+	gp_fill(p, fill);
+	t = gp_time_stamp();
 
-	ca1d_run(ca1d_rules + rule);
+	printf("Fill time %lums\n", t - s);
 
-	for (i = 0; i < gp_vec_len(steps); i++) {
-		for (j = 0; j < 64; j++) {
-			gp_fill_rect_xywh(p, cw * j, ch * i, cw, ch,
-					  steps[i] & (1UL << j) ? fg : bg);
+	s = gp_time_stamp();
+	ca1d_run();
+	t = gp_time_stamp();
+
+	printf("Automata time %lums\n", t - s);
+
+	s = gp_time_stamp();
+	for (i = 0; i < height; i++) {
+		for (j = 0; j < width; j++) {
+			for (k = 0; k < 64; k++) {
+				px = steps[gp_matrix_idx(width, i, j)] &
+					(1UL << (63 - k)) ? fg : bg;
+				gp_fill_rect_xywh(p, cw * (j * 64 + k), ch * i,
+						  cw, ch, px);
+			}
 		}
 	}
+	t = gp_time_stamp();
+
+	printf("Fill rects time %lums\n", t - s);
 }
 
 static void allocate_backing_pixmap(gp_widget_event *ev)
@@ -187,13 +229,11 @@ int main(int argc, char *argv[])
 		return 0;
 
 	gp_widget *pixmap = gp_widget_by_uid(uids, "pixmap", GP_WIDGET_PIXMAP);
-	gp_widget *tb = gp_widget_by_uid(uids, "rule", GP_WIDGET_TBOX);
 
 	gp_widget_event_unmask(pixmap, GP_WIDGET_EVENT_RESIZE);
-	gp_widget_event_unmask(tb, GP_WIDGET_EVENT_WIDGET);
 
 	ca1d_preprocess();
-	steps = gp_vec_new(64, sizeof(uint64_t));
+	steps = gp_matrix_new(width, height, sizeof(uint64_t));
 	gp_widgets_main_loop(layout, "Pixmap example", NULL, argc, argv);
 
 	return 0;
