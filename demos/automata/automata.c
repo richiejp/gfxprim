@@ -9,6 +9,8 @@
 
   */
 
+#include <stdlib.h>
+#include <errno.h>
 #include <gfxprim.h>
 
 #define BITN(b, n) (b & (1UL << n) ? ~0UL : 0UL)
@@ -37,6 +39,7 @@ struct ca1d_rule {
 } static ca1d_rules[256];
 
 static uint64_t *steps;
+static int rule = 110;
 static void *uids;
 
 /* Create the pattern masks in advance */
@@ -95,7 +98,7 @@ static void fill_pixmap(gp_pixmap *p)
 
 	gp_fill(p, bg);
 
-	ca1d_run(ca1d_rules + 30);
+	ca1d_run(ca1d_rules + rule);
 
 	for (i = 0; i < gp_vec_len(steps); i++) {
 		for (j = 0; j < 64; j++) {
@@ -131,6 +134,51 @@ int pixmap_on_event(gp_widget_event *ev)
 	return 0;
 }
 
+int rule_tbox_on_event(gp_widget_event *ev)
+{
+	struct gp_widget_tbox *tb = ev->self->tbox;
+	gp_widget *pixmap;
+	char tbuf[4] = { 0 };
+	char c;
+	int r;
+
+	gp_widget_event_dump(ev);
+
+	switch(ev->type) {
+	case GP_WIDGET_EVENT_WIDGET:
+		switch(ev->sub_type) {
+		case GP_WIDGET_TBOX_FILTER:
+			c = (char)ev->val;
+
+			if (c < '0' || c > '9')
+				return 1;
+
+			if (!gp_vec_strlen(tb->buf))
+				return 0;
+
+			strcpy(tbuf, tb->buf);
+			tbuf[tb->cur_pos] = c;
+
+			r = strtol(tbuf, NULL, 10);
+
+			return r > 255;
+			break;
+		case GP_WIDGET_TBOX_EDIT:
+			rule = strtol(tb->buf, NULL, 10);
+			pixmap = gp_widget_by_uid(uids, "pixmap", GP_WIDGET_PIXMAP);
+			fill_pixmap(pixmap->pixmap->pixmap);
+			gp_widget_redraw(pixmap);
+			break;
+		default:
+			break;
+		}
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 int main(int argc, char *argv[])
 {
 	gp_widget *layout = gp_widget_layout_json("automata.json", &uids);
@@ -139,8 +187,10 @@ int main(int argc, char *argv[])
 		return 0;
 
 	gp_widget *pixmap = gp_widget_by_uid(uids, "pixmap", GP_WIDGET_PIXMAP);
+	gp_widget *tb = gp_widget_by_uid(uids, "rule", GP_WIDGET_TBOX);
 
 	gp_widget_event_unmask(pixmap, GP_WIDGET_EVENT_RESIZE);
+	gp_widget_event_unmask(tb, GP_WIDGET_EVENT_WIDGET);
 
 	ca1d_preprocess();
 	steps = gp_vec_new(64, sizeof(uint64_t));
