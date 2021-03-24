@@ -39,6 +39,7 @@
 		    "len": 2,
 		    "max_len": 2,
 		    "text": "1",
+		    "on_event": "width_widget_on_event",
 		},
 		{
 		    "type": "label",
@@ -49,6 +50,7 @@
 		    "len": 4,
 		    "max_len": 4,
 		    "text": "64",
+		    "on_event": "height_widget_on_event",
 		},
 		{
 		    "type": "label",
@@ -62,6 +64,7 @@
 	    "widgets": [
 		{
 		    "type": "tbox",
+		    "uid": "init",
 		    "on_event": "init_widget_on_event",
 		    "len": 40,
 		},

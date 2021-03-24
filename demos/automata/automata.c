@@ -39,9 +39,9 @@ struct ca1d_rule {
 } static ca1d_rules[256];
 
 /* Number of bitfields in a row */
-static size_t width = 20;
+static size_t width = 1;
 /* Number of steps in the simulation */
-static size_t height = 1280;
+static size_t height = 64;
 /* Matrix of bitfields representing the automata's state over time */
 static uint64_t *steps;
 /* Initial conditions */
@@ -71,6 +71,22 @@ static void ca1d_preprocess(void)
 			p->right  = BITN(pi, 0);
 		}
 	}
+}
+
+static void ca1d_allocate(void)
+{
+	if (init)
+		gp_vec_free(init);
+	init = gp_vec_new(width, sizeof(uint64_t));
+	init[width / 2] = 1UL << (63 - (width * 32) % 64);
+
+	if (zeroes)
+		gp_vec_free(zeroes);
+	zeroes = gp_vec_new(width, sizeof(uint64_t));
+
+	if (steps)
+		gp_vec_free(steps);
+	steps = gp_matrix_new(width, height, sizeof(uint64_t));
 }
 
 static inline uint64_t ca1d_rule_apply(const struct ca1d_rule *rule,
@@ -217,8 +233,6 @@ int rule_widget_on_event(gp_widget_event *ev)
 	char c;
 	int r;
 
-	gp_widget_event_dump(ev);
-
 	if (ev->type != GP_WIDGET_EVENT_WIDGET)
 		return 0;
 
@@ -260,27 +274,115 @@ int rule_widget_on_event(gp_widget_event *ev)
 	return 0;
 }
 
+static void init_from_text(void)
+{
+	gp_widget *self = gp_widget_by_uid(uids, "init", GP_WIDGET_TBOX);
+	const char *text = gp_widget_tbox_text(self);
+	size_t len = gp_vec_strlen(text);
+
+	memset(init, 0, width * sizeof(uint64_t));
+
+	if (!len)
+		init[width / 2] = 1UL << (63 - (width * 32) % 64);
+	else
+		memcpy(init, text, GP_MIN(width * sizeof(uint64_t), len));
+}
+
+int width_widget_on_event(gp_widget_event *ev)
+{
+	struct gp_widget_tbox *tb = ev->self->tbox;
+	char tbuf[3] = { 0 };
+	char c;
+	int r;
+
+	if (ev->type != GP_WIDGET_EVENT_WIDGET)
+		return 0;
+
+	switch(ev->sub_type) {
+	case GP_WIDGET_TBOX_FILTER:
+		c = (char)ev->val;
+
+		if (c < '0' || c > '9')
+			return 1;
+
+		if (!gp_vec_strlen(tb->buf))
+			return 0;
+
+		strcpy(tbuf, tb->buf);
+		tbuf[tb->cur_pos] = c;
+
+		r = strtol(tbuf, NULL, 10);
+
+		return r < 1;
+		break;
+	case GP_WIDGET_TBOX_EDIT:
+		if (!gp_vec_strlen(tb->buf))
+			return 0;
+
+		width = strtol(tb->buf, NULL, 10);
+		ca1d_allocate();
+		init_from_text();
+		pixmap_do_redraw();
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+int height_widget_on_event(gp_widget_event *ev)
+{
+	struct gp_widget_tbox *tb = ev->self->tbox;
+	char tbuf[5] = { 0 };
+	char c;
+	int r;
+
+	if (ev->type != GP_WIDGET_EVENT_WIDGET)
+		return 0;
+
+	switch(ev->sub_type) {
+	case GP_WIDGET_TBOX_FILTER:
+		c = (char)ev->val;
+
+		if (c < '0' || c > '9')
+			return 1;
+
+		if (!gp_vec_strlen(tb->buf))
+			return 0;
+
+		strcpy(tbuf, tb->buf);
+		tbuf[tb->cur_pos] = c;
+
+		r = strtol(tbuf, NULL, 10);
+
+		return r < 2;
+		break;
+	case GP_WIDGET_TBOX_EDIT:
+		if (!gp_vec_strlen(tb->buf))
+			return 0;
+
+		height = strtol(tb->buf, NULL, 10);
+		ca1d_allocate();
+		init_from_text();
+		pixmap_do_redraw();
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 int init_widget_on_event(gp_widget_event *ev)
 {
-
-	const char *text;
-	size_t len;
 
 	if (ev->type != GP_WIDGET_EVENT_WIDGET)
 		return 0;
 
 	switch(ev->sub_type) {
 	case GP_WIDGET_TBOX_EDIT:
-		text = gp_widget_tbox_text(ev->self);
-		len = gp_vec_strlen(text);
-
-		memset(init, 0, width * sizeof(uint64_t));
-
-		if (!len)
-			init[width / 2] = 1UL << (63 - (width * 32) % 64);
-		else
-			memcpy(init, text, GP_MIN(width * sizeof(uint64_t), len));
-
+		init_from_text();
 		pixmap_do_redraw();
 		break;
 	default:
@@ -302,10 +404,7 @@ int main(int argc, char *argv[])
 	gp_widget_event_unmask(pixmap, GP_WIDGET_EVENT_RESIZE);
 
 	ca1d_preprocess();
-	init = gp_vec_new(width, sizeof(uint64_t));
-	init[width / 2] = 1UL << (63 - (width * 32) % 64);
-	zeroes = gp_vec_new(width, sizeof(uint64_t));
-	steps = gp_matrix_new(width, height, sizeof(uint64_t));
+	ca1d_allocate();
 	gp_widgets_main_loop(layout, "Pixmap example", NULL, argc, argv);
 
 	return 0;
