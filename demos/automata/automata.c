@@ -156,8 +156,8 @@ static void ca1d_run(void)
 static void fill_pixmap(gp_pixmap *p)
 {
 	size_t i, j, k;
-	gp_coord cw = p->w / (64 * width) + 1;
-	gp_coord ch = p->h / height + 1;
+	gp_coord cw = p->w / (64 * width);
+	gp_coord ch = p->h / height;
 	gp_pixel fill = gp_rgb_to_pixmap_pixel(0xff, 0x00, 0x00, p);
 	gp_pixel bg = gp_rgb_to_pixmap_pixel(0xff, 0xff, 0xff, p);
 	gp_pixel fg = gp_rgb_to_pixmap_pixel(0x00, 0x00, 0x00, p);
@@ -305,9 +305,6 @@ int width_widget_on_event(gp_widget_event *ev)
 		if (c < '0' || c > '9')
 			return 1;
 
-		if (!gp_vec_strlen(tb->buf))
-			return 0;
-
 		strcpy(tbuf, tb->buf);
 		tbuf[tb->cur_pos] = c;
 
@@ -334,9 +331,7 @@ int width_widget_on_event(gp_widget_event *ev)
 int height_widget_on_event(gp_widget_event *ev)
 {
 	struct gp_widget_tbox *tb = ev->self->tbox;
-	char tbuf[5] = { 0 };
 	char c;
-	int r;
 
 	if (ev->type != GP_WIDGET_EVENT_WIDGET)
 		return 0;
@@ -345,24 +340,14 @@ int height_widget_on_event(gp_widget_event *ev)
 	case GP_WIDGET_TBOX_FILTER:
 		c = (char)ev->val;
 
-		if (c < '0' || c > '9')
-			return 1;
+		return c < '0' || c > '9';
 
-		if (!gp_vec_strlen(tb->buf))
-			return 0;
-
-		strcpy(tbuf, tb->buf);
-		tbuf[tb->cur_pos] = c;
-
-		r = strtol(tbuf, NULL, 10);
-
-		return r < 2;
 		break;
 	case GP_WIDGET_TBOX_EDIT:
 		if (!gp_vec_strlen(tb->buf))
 			return 0;
 
-		height = strtol(tb->buf, NULL, 10);
+		height = GP_MAX(2, strtol(tb->buf, NULL, 10));
 		ca1d_allocate();
 		init_from_text();
 		pixmap_do_redraw();
