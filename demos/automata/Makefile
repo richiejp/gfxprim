@@ -4,7 +4,7 @@ include $(TOPDIR)/pre.mk
 CSOURCES=automata.c
 
 INCLUDE=
-LDLIBS+=$(shell $(TOPDIR)/gfxprim-config --libs --libs-widgets)
+LDLIBS+=$(shell $(TOPDIR)/gfxprim-config --libs --libs-widgets --libs-loaders)
 
 APPS=automata
 

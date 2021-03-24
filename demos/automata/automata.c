@@ -291,9 +291,7 @@ static void init_from_text(void)
 int width_widget_on_event(gp_widget_event *ev)
 {
 	struct gp_widget_tbox *tb = ev->self->tbox;
-	char tbuf[3] = { 0 };
 	char c;
-	int r;
 
 	if (ev->type != GP_WIDGET_EVENT_WIDGET)
 		return 0;
@@ -302,21 +300,14 @@ int width_widget_on_event(gp_widget_event *ev)
 	case GP_WIDGET_TBOX_FILTER:
 		c = (char)ev->val;
 
-		if (c < '0' || c > '9')
-			return 1;
+		return c < '0' || c > '9';
 
-		strcpy(tbuf, tb->buf);
-		tbuf[tb->cur_pos] = c;
-
-		r = strtol(tbuf, NULL, 10);
-
-		return r < 1;
 		break;
 	case GP_WIDGET_TBOX_EDIT:
 		if (!gp_vec_strlen(tb->buf))
 			return 0;
 
-		width = strtol(tb->buf, NULL, 10);
+		width = GP_MAX(1, strtol(tb->buf, NULL, 10));
 		ca1d_allocate();
 		init_from_text();
 		pixmap_do_redraw();
@@ -372,6 +363,63 @@ int init_widget_on_event(gp_widget_event *ev)
 		break;
 	default:
 		break;
+	}
+
+	return 0;
+}
+
+int select_dir_on_event(gp_widget_event *ev)
+{
+	const char *path;
+	gp_widget_dialog *dialog;
+	gp_widget *path_tbox;
+
+	if (ev->type != GP_WIDGET_EVENT_WIDGET)
+		return 0;
+
+	dialog = gp_widget_dialog_file_open_new(NULL);
+
+	if (gp_widget_dialog_run(dialog) != GP_WIDGET_DIALOG_PATH)
+		goto out;
+
+	path = gp_widget_dialog_file_open_path(dialog);
+	printf("Selected path '%s'\n", path);
+
+	path_tbox = gp_widget_by_uid(uids, "file path", GP_WIDGET_TBOX);
+	gp_widget_tbox_printf(path_tbox, "%s/1dca.png", path);
+
+out:
+	gp_widget_dialog_free(dialog);
+
+	return 0;
+}
+
+int save_on_event(gp_widget_event *ev)
+{
+	const char *path;
+	gp_widget *pixmap_w;
+	gp_pixmap *pixmap;
+	gp_widget *path_tbox;
+
+	if (ev->type != GP_WIDGET_EVENT_WIDGET)
+		return 0;
+
+	path_tbox = gp_widget_by_uid(uids, "file path", GP_WIDGET_TBOX);
+	path = gp_widget_tbox_text(path_tbox);
+
+	pixmap_w = gp_widget_by_uid(uids, "pixmap", GP_WIDGET_PIXMAP);
+	pixmap = pixmap_w->pixmap->pixmap;
+	if (gp_save_image(pixmap, path, NULL)) {
+		switch(errno) {
+		case EINVAL:
+			perror("File extension not found or pixel type not supported by format");
+			break;
+		case ENOSYS:
+			perror("Image format not supported");
+			break;
+		default:
+			perror("Save image failed");
+		}
 	}
 
 	return 0;
