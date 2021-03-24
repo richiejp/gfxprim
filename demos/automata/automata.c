@@ -44,7 +44,15 @@ static size_t width = 20;
 static size_t height = 1280;
 /* Matrix of bitfields representing the automata's state over time */
 static uint64_t *steps;
+/* Initial conditions */
+static uint64_t *init;
+/* Zero mask */
+static uint64_t *zeroes;
+/* Numeric representation of the current update rule */
 static int rule = 110;
+/* Whether to use the reversible version of the current rule */
+static int reversible;
+
 static void *uids;
 
 /* Create the pattern masks in advance */
@@ -66,7 +74,8 @@ static void ca1d_preprocess(void)
 }
 
 static inline uint64_t ca1d_rule_apply(const struct ca1d_rule *rule,
-				       uint64_t c_prev, uint64_t c, uint64_t c_next)
+				       uint64_t c_prev, uint64_t c, uint64_t c_next,
+				       uint64_t c_prev_step)
 {
 	int i;
 	const struct ca1d_pattern *p;
@@ -81,33 +90,50 @@ static inline uint64_t ca1d_rule_apply(const struct ca1d_rule *rule,
 			~(p->left ^ l) & ~(p->center ^ c) & ~(p->right ^ r);
 	}
 
-	return cn;
+	return cn ^ c_prev_step;
 }
 
-static void ca1d_rule_apply_row(const struct ca1d_rule *r, int step, size_t len)
+static inline void ca1d_rule_apply_row(const struct ca1d_rule *r,
+				       const uint64_t *prev,
+				       const uint64_t *cur,
+				       uint64_t *next)
 {
 	size_t i;
-	const uint64_t *row = steps + gp_matrix_idx(len, step, 0);
-	uint64_t *next = steps + gp_matrix_idx(len, step + 1, 0);
 
-	next[0] = ca1d_rule_apply(r, row[len - 1], row[0], row[GP_MIN(1, len - 1)]);
+	next[0] = ca1d_rule_apply(r, cur[width - 1], cur[0],
+				  cur[GP_MIN(1, width - 1)], prev[0]);
 
-	for (i = 1; i < len - 1; i++)
-		next[i] = ca1d_rule_apply(r, row[i - 1], row[i], row[i + 1]);
+	for (i = 1; i < width - 1; i++) {
+		next[i] = ca1d_rule_apply(r, cur[i - 1], cur[i], cur[i + 1],
+					  prev[i]);
+	}
 
-	if (i < len)
-		next[i] = ca1d_rule_apply(r, row[i - 1], row[i], row[0]);
+	if (i >= width)
+		return;
+
+	next[i] = ca1d_rule_apply(r, cur[i - 1], cur[i], cur[0], prev[i]);
 }
 
 static void ca1d_run(void)
 {
 	const struct ca1d_rule *r = ca1d_rules + rule;
-	size_t i;
+	const uint64_t *prev = zeroes;
+	const uint64_t *cur = steps;
+	uint64_t *next = steps + gp_matrix_idx(width, 1, 0);
+	size_t i = 1;
 
-	steps[width / 2] = 1UL << (63 - (width * 32) % 64);
+	memcpy(steps, init, width * sizeof(uint64_t));
 
-	for (i = 0; i < height - 1; i++)
-		ca1d_rule_apply_row(r, i, width);
+	for (;;) {
+		ca1d_rule_apply_row(r, prev, cur, next);
+
+		if (++i >= height)
+			break;
+
+		prev = reversible ? cur : zeroes;
+		cur = next;
+		next = steps + gp_matrix_idx(width, i, 0);
+	}
 
 }
 
@@ -176,18 +202,28 @@ int pixmap_on_event(gp_widget_event *ev)
 	return 0;
 }
 
-int rule_tbox_on_event(gp_widget_event *ev)
+static void pixmap_do_redraw(void)
+{
+	gp_widget *pixmap = gp_widget_by_uid(uids, "pixmap", GP_WIDGET_PIXMAP);
+
+	fill_pixmap(pixmap->pixmap->pixmap);
+	gp_widget_redraw(pixmap);
+}
+
+int rule_widget_on_event(gp_widget_event *ev)
 {
 	struct gp_widget_tbox *tb = ev->self->tbox;
-	gp_widget *pixmap;
 	char tbuf[4] = { 0 };
 	char c;
 	int r;
 
 	gp_widget_event_dump(ev);
 
-	switch(ev->type) {
-	case GP_WIDGET_EVENT_WIDGET:
+	if (ev->type != GP_WIDGET_EVENT_WIDGET)
+		return 0;
+
+	switch(ev->self->type) {
+	case GP_WIDGET_TBOX:
 		switch(ev->sub_type) {
 		case GP_WIDGET_TBOX_FILTER:
 			c = (char)ev->val;
@@ -207,13 +243,46 @@ int rule_tbox_on_event(gp_widget_event *ev)
 			break;
 		case GP_WIDGET_TBOX_EDIT:
 			rule = strtol(tb->buf, NULL, 10);
-			pixmap = gp_widget_by_uid(uids, "pixmap", GP_WIDGET_PIXMAP);
-			fill_pixmap(pixmap->pixmap->pixmap);
-			gp_widget_redraw(pixmap);
 			break;
 		default:
 			break;
 		}
+		break;
+	case GP_WIDGET_CHECKBOX:
+		reversible = ev->self->checkbox->val;
+		break;
+	default:
+		return 0;
+	}
+
+	pixmap_do_redraw();
+
+	return 0;
+}
+
+int init_widget_on_event(gp_widget_event *ev)
+{
+
+	const char *text;
+	size_t len;
+
+	if (ev->type != GP_WIDGET_EVENT_WIDGET)
+		return 0;
+
+	switch(ev->sub_type) {
+	case GP_WIDGET_TBOX_EDIT:
+		text = gp_widget_tbox_text(ev->self);
+		len = gp_vec_strlen(text);
+
+		memset(init, 0, width * sizeof(uint64_t));
+
+		if (!len)
+			init[width / 2] = 1UL << (63 - (width * 32) % 64);
+		else
+			memcpy(init, text, GP_MIN(width * sizeof(uint64_t), len));
+
+		pixmap_do_redraw();
+		break;
 	default:
 		break;
 	}
@@ -233,18 +302,11 @@ int main(int argc, char *argv[])
 	gp_widget_event_unmask(pixmap, GP_WIDGET_EVENT_RESIZE);
 
 	ca1d_preprocess();
+	init = gp_vec_new(width, sizeof(uint64_t));
+	init[width / 2] = 1UL << (63 - (width * 32) % 64);
+	zeroes = gp_vec_new(width, sizeof(uint64_t));
 	steps = gp_matrix_new(width, height, sizeof(uint64_t));
 	gp_widgets_main_loop(layout, "Pixmap example", NULL, argc, argv);
 
 	return 0;
 }
-
-// Create window
-
-// Draw squares
-
-// Draw 1-d automata
-
-// Draw all 1-d automata
-
-// Draw reversible 1-d automata

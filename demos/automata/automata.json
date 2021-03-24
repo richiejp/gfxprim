@@ -1,9 +1,9 @@
 {
     "version": 1,
     "cols": 1,
-    "rows": 2,
+    "rows": 3,
     "align": "fill",
-    "rfill": "10, 1",
+    "rfill": "98, 1, 1",
     "widgets": [
 	{
 	    "type": "pixmap",
@@ -14,21 +14,61 @@
 	    "uid": "pixmap"
  	},
 	{
-	    "align": "fill",
-	    "cols": 2,
+	    "align": "center",
+	    "cols": 7,
 	    "widgets": [
 		{
-		    "type": "label",
-		    "text": "Rule No.",
-		},
-		{
-		    "uid": "rule",
 		    "type": "tbox",
-		    "on_event": "rule_tbox_on_event",
+		    "on_event": "rule_widget_on_event",
 		    "len": 3,
 		    "max_len": 3,
 		    "text": "110",
 		},
+		{
+		    "type": "label",
+		    "text": "Rule No.",
+		    "halign": "left",
+		},
+		{
+		    "type": "checkbox",
+		    "label": "Reversible?",
+		    "on_event": "rule_widget_on_event",
+		},
+		{
+		    "type": "tbox",
+		    "len": 2,
+		    "max_len": 2,
+		    "text": "1",
+		},
+		{
+		    "type": "label",
+		    "text": "Width X 64",
+		},
+		{
+		    "type": "tbox",
+		    "len": 4,
+		    "max_len": 4,
+		    "text": "64",
+		},
+		{
+		    "type": "label",
+		    "text": "Height",
+		},
+	    ]
+	},
+	{
+	    "align": "center",
+	    "cols": 2,
+	    "widgets": [
+		{
+		    "type": "tbox",
+		    "on_event": "init_widget_on_event",
+		    "len": 40,
+		},
+		{
+		    "type": "label",
+		    "text": "Initial Conditions"
+		}
 	    ]
 	}
     ]
