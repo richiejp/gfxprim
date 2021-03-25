@@ -13,7 +13,7 @@
 #include <errno.h>
 #include <gfxprim.h>
 
-#define BITN(b, n) (b & (1UL << n) ? ~0UL : 0UL)
+#define BIT_TO_MAX(b, n) (((b >> n) & 1) * ~0UL)
 
 /* One of 8 unique patterns in a rule.
  *
@@ -65,10 +65,10 @@ static void ca1d_preprocess(void)
 		for (pi = 0; pi < 8; pi++) {
 			p = ca1d_rules[r].patterns + pi;
 
-			p->active = BITN(r, pi);
-			p->left   = BITN(pi, 2);
-			p->center = BITN(pi, 1);
-			p->right  = BITN(pi, 0);
+			p->active = BIT_TO_MAX(r, pi);
+			p->left   = BIT_TO_MAX(pi, 2);
+			p->center = BIT_TO_MAX(pi, 1);
+			p->right  = BIT_TO_MAX(pi, 0);
 		}
 	}
 }
@@ -153,15 +153,27 @@ static void ca1d_run(void)
 
 }
 
+static inline void shade_pixel(gp_pixmap *p, gp_coord x, gp_coord y,
+			       gp_pixel bg, gp_pixel fg)
+{
+	gp_pixel px;
+	size_t i = (x * (64 * width)) / p->w;
+	size_t j = (y * height) / p->h;
+	size_t k = 63 - (i & 63);
+	uint64_t c = steps[gp_matrix_idx(width, j, i >> 6)];
+
+	c = BIT_TO_MAX(c, k);
+	px = (fg & c) | (bg & ~c);
+
+	gp_putpixel_raw(p, x, y, px);
+}
+
 static void fill_pixmap(gp_pixmap *p)
 {
-	size_t i, j, k;
-	gp_coord cw = p->w / (64 * width);
-	gp_coord ch = p->h / height;
-	gp_pixel fill = gp_rgb_to_pixmap_pixel(0xff, 0x00, 0x00, p);
+	uint32_t x, y;
 	gp_pixel bg = gp_rgb_to_pixmap_pixel(0xff, 0xff, 0xff, p);
 	gp_pixel fg = gp_rgb_to_pixmap_pixel(0x00, 0x00, 0x00, p);
-	gp_pixel px;
+	gp_pixel fill = gp_rgb_to_pixmap_pixel(0xff, 0x00, 0x00, p);
 	uint64_t s, t;
 
 	s = gp_time_stamp();
@@ -176,16 +188,15 @@ static void fill_pixmap(gp_pixmap *p)
 
 	printf("Automata time %lums\n", t - s);
 
+	if (width * 64 > p->w || height > p->h) {
+		printf("Automata is larger than screen\n");
+		return;
+	}
+
 	s = gp_time_stamp();
-	for (i = 0; i < height; i++) {
-		for (j = 0; j < width; j++) {
-			for (k = 0; k < 64; k++) {
-				px = steps[gp_matrix_idx(width, i, j)] &
-					(1UL << (63 - k)) ? fg : bg;
-				gp_fill_rect_xywh(p, cw * (j * 64 + k), ch * i,
-						  cw, ch, px);
-			}
-		}
+	for (x = 0; x < p->w; x++) {
+		for (y = 0; y < p->h; y++)
+			shade_pixel(p, x, y, bg, fg);
 	}
 	t = gp_time_stamp();
 
@@ -386,7 +397,7 @@ int select_dir_on_event(gp_widget_event *ev)
 	printf("Selected path '%s'\n", path);
 
 	path_tbox = gp_widget_by_uid(uids, "file path", GP_WIDGET_TBOX);
-	gp_widget_tbox_printf(path_tbox, "%s/1dca.png", path);
+	gp_widget_tbox_printf(path_tbox, "%s1dca.jpeg", path);
 
 out:
 	gp_widget_dialog_free(dialog);
