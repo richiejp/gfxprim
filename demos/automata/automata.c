@@ -26,72 +26,121 @@
  * rule can be display by showing a row of patterns and a row of next
  * states.
  *
- * 111 110 101 100 011 010 001 000
- *  0   1   1   0   1   1   1   0
+ *  111 110 101 100 011 010 001 000
+ *   0   1   1   0   1   1   1   0
  *
- *  Above is rule 110, 0x6e or 01101110. It essentially says to match
- *  patterns 110, 101, 011, 010, 001. Where a pattern match results in
- *  the cell being set to 1 at the next time step. If no pattern is
- *  matched or equivalently, an inactive pattern is matched, then the
- *  cell will be set to 0.
+ * Above is rule 110, 0x6e or 01101110. It essentially says to match
+ * patterns 110, 101, 011, 010, 001. Where a pattern match results in
+ * the cell being set to 1 at the next time step. If no pattern is
+ * matched or equivalently, an inactive pattern is matched, then the
+ * cell will be set to 0.
  *
- *  Again note that each pattern resembles a 3bit binary number. Also
- *  the values of the active patterns resemble an 8bit binary
- *  number. We can use this to perform efficient matching of the
- *  patterns using binary operations.
+ * Again note that each pattern resembles a 3bit binary number. Also
+ * the values of the active patterns resemble an 8bit binary
+ * number. We can use this to perform efficient matching of the
+ * patterns using binary operations.
  *
- *  Let's assume our CPU natively operates on 64bit integers. We can
- *  pack a 64 cell automata into a single 64bit integer. Each bit
- *  corresponds to a cell. If a bit is 1 then it is a black cell and 0
- *  for white.
+ * Let's assume our CPU natively operates on 64bit integers. We can
+ * pack a 64 cell automata into a single 64bit integer. Each bit
+ * corresponds to a cell. If a bit is 1 then it is a black cell and 0
+ * for white.
  *
- *  The CPU can perform bitwise operations on all 64bits in parallel
- *  and without branching.
+ * The CPU can perform bitwise operations on all 64bits in parallel
+ * and without branching.
  *
- *  If we shift (>>, rotate[1]) all bits to the right by 1, then we
- *  get a new integer where the left neighbor of a bit is now in its
- *  position. Likewise if we shift all bits to the left, then we get
- *  an integer representing the right neighbors. This gives us 3
- *  integers where the left, center and right bits are in the same
- *  position. For example, using only 8bits:
+ * If we shift (>>, rotate[1]) all bits to the right by 1, then we
+ * get a new integer where the left neighbor of a bit is now in its
+ * position. Likewise if we shift all bits to the left, then we get
+ * an integer representing the right neighbors. This gives us 3
+ * integers where the left, center and right bits are in the same
+ * position. For example, using only 8bits:
  *
  *  left:   0100 1011
  *  center: 1001 0110
  *  right:  0010 1101
  *
- *  Each pattern can be represented as a 3bit number, plus a 4th bit
- *  to say whether it is active in a given rule. As we want to operate
- *  on all 64bits at once in the left, right and center bit fields. We
- *  can generate 64bit long masks from the value of each bit in a
- *  given pattern.
+ * Each pattern can be represented as a 3bit number, plus a 4th bit
+ * to say whether it is active in a given rule. As we want to operate
+ * on all 64bits at once in the left, right and center bit fields. We
+ * can generate 64bit long masks from the value of each bit in a
+ * given pattern.
  *
- *  So if we have a pattern where the left cell should be 1, then we
- *  can create a 64bit mask of all 1s. If it should be zero, then all
- *  zeroes. Likewise for the center and right cells. The masks can be
- *  xor'ed[2] (^) with the corresponding cell fields to show if no
- *  match occurred. That is the pattern is 1 and the cell is 0 or the
- *  cell is 1 and the pattern is 0. We can invert this (~) to give 1
- *  when a match occurs.
+ * So if we have a pattern where the left cell should be 1, then we
+ * can create a 64bit mask of all 1s. If it should be zero, then all
+ * zeroes. Likewise for the center and right cells. The masks can be
+ * xor'ed[2] (^) with the corresponding cell fields to show if no
+ * match occurred. That is the pattern is 1 and the cell is 0 or the
+ * cell is 1 and the pattern is 0. We can invert this (~) to give 1
+ * when a match occurs.
  *
- *  To see whether all components (left, right, center) of a pattern
- *  matches we can bitwise and (&) them together. We can then bitwise
- *  or[3] (|) the result of the pattern matches together to produce
- *  the final values.
+ * To see whether all components (left, right, center) of a pattern
+ * matches we can bitwise and (&) them together. We can then bitwise
+ * or[3] (|) the result of the pattern matches together to produce
+ * the final values.
  *
- *  If we wish to operate on an automata larger than 64 cells, then we
- *  can combine multiple ints in an array. After performing the left
- *  and right shifts, we get the high or low bit from the next or
- *  previous integers in the array. Then set the low and high bits of
- *  the right and left bit fields.
+ * If we wish to operate on an automata larger than 64 cells, then we
+ * can combine multiple ints in an array. After performing the left
+ * and right shifts, we get the high or low bit from the next or
+ * previous integers in the array. Then set the low and high bits of
+ * the right and left bit fields.
  *
- *  To make the automata "reversible" an extra step can be added. We
- *  look at a cell's previous (in addition to the current, left and
- *  right) and if it was 1 then *invert* the next value. This is
- *  equivalent to xor'ring the previous value with the next.
+ * To make the automata "reversible" an extra step can be added. We
+ * look at a cell's previous (in addition to the current, left and
+ * right) and if it was 1 then *invert* the next value. This is
+ * equivalent to xor'ring the previous value with the next.
  *
- *  It is not entirely clear to me what the mathematical implications
- *  are of being reversible. However it is important to physics and
- *  makes some really cool patterns which mimic nature.
+ * It is not entirely clear to me what the mathematical implications
+ * are of being reversible. However it is important to physics and
+ * makes some really cool patterns which mimic nature.
+ *
+ * The automata definition is taken from Stephen Wolfram's "A new
+ * kind of science". He proposes at least one obvious C
+ * implementation using arrays of cells. He also provides a table of
+ * binary expressions for each rule. E.g. rule 90 reduces to just
+ * l^r. It may be possible for the compiler to automatically reduce
+ * my implementation to these minimal expressions.
+ *
+ * To see why, let's consider rule 90 for each pattern
+ *
+ *  111 110 101 100 011 010 001 000
+ *   0   1   0   1   1   0   1   0  = 90
+ *
+ * First for pattern 000.
+ *   000:= active & ~(left ^ l) & ~(center ^ c) & ~(right ^ r);
+ *   000:= 0 & ~(0 ^ l) & ~(0 ^ c) & ~(0 ^ r),
+ *       = 0
+ *
+ * Active is 0 so the whole line reduces to 0. Now for 001. Note
+ * that 1 here actually means ~0UL, that is 64bit integer max.
+ *   001:= 1 & ~(0 ^ l) & ~(0 ^ c) & ~(1 ^ r),
+ *   001:= ~l & ~c & r
+ *
+ * As expected pattern 001 matches l=0, c=0, r=1. Let's just list
+ * the remaining patterns or'ed together in their reduced state.
+ *
+ *     l & c & ~r | l & ~c & ~r | ~l & c & r | ~l & ~c & r
+ *   = l & ~r | ~l & r
+ *   = l ^ r
+ *
+ * See on the top row that (l & c & ~r | l & ~c & ~r) or's together
+ * c and not c. So we can remove it. Then we get an expression
+ * equivalent to xor'ring l and r.
+ *
+ * In theory at least, the compiler can see that rule only has 256
+ * values and create a reduced version of ca1d_rule_apply(_row) for
+ * each value. Whether it actually does is not of much practical
+ * concern when the rendering code is the bottle neck.
+ *
+ * However judging from the disassembly from "gcc -O3 -mcpu=native
+ * -mtune=native", it may actually do this. Additionally it
+ * "vectorizes" the code packing 4 64bit ints at a time into 256bit
+ * registers and operating on those. I don't know which part of the
+ * code it is vectorising or how. It's possible that what I think is
+ * the rule being reduced is something related to vectorisation.
+ *
+ * To render the automata we take the approach of iterating over each
+ * pixel in the image. We calculate which cell the pixel falls inside
+ * and set the color of the pixel to that of the cell. That's it.
  *
  *  [1]: We perform a rotating shift which moves the end bit to the start.
  *       This causes the automata to wrap around.
@@ -108,6 +157,7 @@
 #define BIT_TO_MAX(b, n) (((b >> n) & 1) * ~0UL)
 
 /* Number of bitfields in a row */
+
 static size_t width = 1;
 /* Number of steps in the simulation */
 static size_t height = 64;
