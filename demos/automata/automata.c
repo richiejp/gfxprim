@@ -157,7 +157,6 @@
 #define BIT_TO_MAX(b, n) (((b >> n) & 1) * ~0UL)
 
 /* Number of bitfields in a row */
-
 static size_t width = 1;
 /* Number of steps in the simulation */
 static size_t height = 64;
@@ -165,7 +164,7 @@ static size_t height = 64;
 static uint64_t *steps;
 /* Initial conditions */
 static uint64_t *init;
-/* Zero mask */
+/* Zero row mask */
 static uint64_t *zeroes;
 /* Numeric representation of the current update rule */
 static uint8_t rule = 110;
@@ -190,6 +189,7 @@ static void ca1d_allocate(void)
 	steps = gp_matrix_new(width, height, sizeof(uint64_t));
 }
 
+/* Apply the current rule to a 64bit segment of a row */
 static inline uint64_t ca1d_rule_apply(uint64_t c_prev,
 				       uint64_t c,
 				       uint64_t c_next,
@@ -213,6 +213,7 @@ static inline uint64_t ca1d_rule_apply(uint64_t c_prev,
 	return c_next_step ^ c_prev_step;
 }
 
+/* Apply the current rule to an entire row */
 static inline void ca1d_rule_apply_row(const uint64_t *prev,
 				       const uint64_t *cur,
 				       uint64_t *next)
@@ -255,6 +256,10 @@ static void ca1d_run(void)
 
 }
 
+/* Note that i & 63 = i % 64 and i >> 6 = i / 64 as 2**6 = 64. Also
+ * use putpixel_raw because it is inlined and we know x and y are
+ * inside the pixmap.
+ */
 static inline void shade_pixel(gp_pixmap *p, gp_coord x, gp_coord y,
 			       gp_pixel bg, gp_pixel fg)
 {
