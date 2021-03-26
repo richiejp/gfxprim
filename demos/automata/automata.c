@@ -15,29 +15,6 @@
 
 #define BIT_TO_MAX(b, n) (((b >> n) & 1) * ~0UL)
 
-/* One of 8 unique patterns in a rule.
- *
- * Note that the values should be a full or empty bit mask, that is
- * ~0UL or 0.
- */
-struct ca1d_pattern {
-	/* Whether the rule matches on this pattern */
-	uint64_t active;
-	/* The state of the left neighbor to match */
-	uint64_t left;
-	/* The state of the current cell to match */
-	uint64_t center;
-	/* The state of the right cell to match */
-	uint64_t right;
-};
-
-/* A 1D Cellular Automata rule. There are 8 patterns in each rule
- * which may be combined to create 256 unique rules.
- */
-static struct ca1d_rule {
-	struct ca1d_pattern patterns[8];
-} ca1d_rules[256];
-
 /* Number of bitfields in a row */
 static size_t width = 1;
 /* Number of steps in the simulation */
@@ -49,29 +26,11 @@ static uint64_t *init;
 /* Zero mask */
 static uint64_t *zeroes;
 /* Numeric representation of the current update rule */
-static int rule = 110;
+static uint8_t rule = 110;
 /* Whether to use the reversible version of the current rule */
 static int reversible;
 
 static void *uids;
-
-/* Create the pattern masks in advance */
-static void ca1d_preprocess(void)
-{
-	struct ca1d_pattern *p;
-	int r, pi;
-
-	for (r = 0; r < 256; r++) {
-		for (pi = 0; pi < 8; pi++) {
-			p = ca1d_rules[r].patterns + pi;
-
-			p->active = BIT_TO_MAX(r, pi);
-			p->left   = BIT_TO_MAX(pi, 2);
-			p->center = BIT_TO_MAX(pi, 1);
-			p->right  = BIT_TO_MAX(pi, 0);
-		}
-	}
-}
 
 static void ca1d_allocate(void)
 {
@@ -89,50 +48,51 @@ static void ca1d_allocate(void)
 	steps = gp_matrix_new(width, height, sizeof(uint64_t));
 }
 
-static inline uint64_t ca1d_rule_apply(const struct ca1d_rule *rule,
-				       uint64_t c_prev, uint64_t c, uint64_t c_next,
+static inline uint64_t ca1d_rule_apply(uint64_t c_prev,
+				       uint64_t c,
+				       uint64_t c_next,
 				       uint64_t c_prev_step)
 {
 	int i;
-	const struct ca1d_pattern *p;
 	uint64_t l = (c >> 1) ^ (c_prev << 63);
 	uint64_t r = (c << 1) ^ (c_next >> 63);
-	uint64_t cn = 0;
+	uint64_t c_next_step = 0;
 
 	for (i = 0; i < 8; i++) {
-		p = rule->patterns + i;
+		uint64_t active = BIT_TO_MAX(rule, i);
+		uint64_t left   = BIT_TO_MAX(i, 2);
+		uint64_t center = BIT_TO_MAX(i, 1);
+		uint64_t right  = BIT_TO_MAX(i, 0);
 
-		cn |= p->active &
-			~(p->left ^ l) & ~(p->center ^ c) & ~(p->right ^ r);
+		c_next_step |=
+			active & ~(left ^ l) & ~(center ^ c) & ~(right ^ r);
 	}
 
-	return cn ^ c_prev_step;
+	return c_next_step ^ c_prev_step;
 }
 
-static inline void ca1d_rule_apply_row(const struct ca1d_rule *r,
-				       const uint64_t *prev,
+static inline void ca1d_rule_apply_row(const uint64_t *prev,
 				       const uint64_t *cur,
 				       uint64_t *next)
 {
 	size_t i;
 
-	next[0] = ca1d_rule_apply(r, cur[width - 1], cur[0],
+	next[0] = ca1d_rule_apply(cur[width - 1], cur[0],
 				  cur[GP_MIN(1, width - 1)], prev[0]);
 
 	for (i = 1; i < width - 1; i++) {
-		next[i] = ca1d_rule_apply(r, cur[i - 1], cur[i], cur[i + 1],
+		next[i] = ca1d_rule_apply(cur[i - 1], cur[i], cur[i + 1],
 					  prev[i]);
 	}
 
 	if (i >= width)
 		return;
 
-	next[i] = ca1d_rule_apply(r, cur[i - 1], cur[i], cur[0], prev[i]);
+	next[i] = ca1d_rule_apply(cur[i - 1], cur[i], cur[0], prev[i]);
 }
 
 static void ca1d_run(void)
 {
-	const struct ca1d_rule *r = ca1d_rules + rule;
 	const uint64_t *prev = zeroes;
 	const uint64_t *cur = steps;
 	uint64_t *next = steps + gp_matrix_idx(width, 1, 0);
@@ -141,7 +101,7 @@ static void ca1d_run(void)
 	memcpy(steps, init, width * sizeof(uint64_t));
 
 	for (;;) {
-		ca1d_rule_apply_row(r, prev, cur, next);
+		ca1d_rule_apply_row(prev, cur, next);
 
 		if (++i >= height)
 			break;
@@ -449,7 +409,6 @@ int main(int argc, char *argv[])
 
 	gp_widget_event_unmask(pixmap, GP_WIDGET_EVENT_RESIZE);
 
-	ca1d_preprocess();
 	ca1d_allocate();
 	gp_widgets_main_loop(layout, "Pixmap example", NULL, argc, argv);
 
