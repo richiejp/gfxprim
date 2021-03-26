@@ -34,9 +34,9 @@ struct ca1d_pattern {
 /* A 1D Cellular Automata rule. There are 8 patterns in each rule
  * which may be combined to create 256 unique rules.
  */
-struct ca1d_rule {
+static struct ca1d_rule {
 	struct ca1d_pattern patterns[8];
-} static ca1d_rules[256];
+} ca1d_rules[256];
 
 /* Number of bitfields in a row */
 static size_t width = 1;
@@ -206,10 +206,12 @@ static void fill_pixmap(gp_pixmap *p)
 static void allocate_backing_pixmap(gp_widget_event *ev)
 {
 	gp_widget *w = ev->self;
+	gp_size l = w->w & 63 ? w->w + 64 - (w->w & 63) : w->w;
+	gp_size h = w->h;
 
 	gp_pixmap_free(w->pixmap->pixmap);
 
-	w->pixmap->pixmap = gp_pixmap_alloc(w->w, w->h, ev->ctx->pixel_type);
+	w->pixmap->pixmap = gp_pixmap_alloc(l, h, ev->ctx->pixel_type);
 
 	fill_pixmap(w->pixmap->pixmap);
 }
