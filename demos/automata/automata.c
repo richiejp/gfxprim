@@ -3,16 +3,108 @@
  * Copyright (C) 2021 Richard Palethorpe (richiejp.com)
  */
 
- /*
-
-   Automata Demo.
-
-  */
+/* 1D Cell Automata Demo
+ *
+ * This implements and displays a nearest-neighbor, one-dimensional
+ * binary, cell automata. Additionally it implements a reversible
+ * automata, which is almost identical except for a small change to
+ * make it reversible. The automata displayed over time in two
+ * dimensions, time travels from top to bottom. Although in the
+ * reversible case time could be played backwards.
+ *
+ * The automata works as follows:
+ * + Each cell has a state, which is on or off, black or white, boolean etc.
+ * + At each time step, the state of a cell in the next step is chosen by a rule.
+ * + The rule looks at a cell's current value and its two neighbor values.
+ * + There are 2^3 = 8 possible state combinations (patterns) for 3 binary cells.
+ * + A rule states which patterns result in a true/black cell in the next time step.
+ * + There are 2^8 = 256 possible rules. That is, 256 unique combinations of patterns.
+ *
+ * So a pattern is a 3 digit binary number, where each digit
+ * corresponds to a cell. The middle digit is the center cell, the
+ * high order bit the left cell, the low order bit the right cell. A
+ * rule can be display by showing a row of patterns and a row of next
+ * states.
+ *
+ * 111 110 101 100 011 010 001 000
+ *  0   1   1   0   1   1   1   0
+ *
+ *  Above is rule 110, 0x6e or 01101110. It essentially says to match
+ *  patterns 110, 101, 011, 010, 001. Where a pattern match results in
+ *  the cell being set to 1 at the next time step. If no pattern is
+ *  matched or equivalently, an inactive pattern is matched, then the
+ *  cell will be set to 0.
+ *
+ *  Again note that each pattern resembles a 3bit binary number. Also
+ *  the values of the active patterns resemble an 8bit binary
+ *  number. We can use this to perform efficient matching of the
+ *  patterns using binary operations.
+ *
+ *  Let's assume our CPU natively operates on 64bit integers. We can
+ *  pack a 64 cell automata into a single 64bit integer. Each bit
+ *  corresponds to a cell. If a bit is 1 then it is a black cell and 0
+ *  for white.
+ *
+ *  The CPU can perform bitwise operations on all 64bits in parallel
+ *  and without branching.
+ *
+ *  If we shift (>>, rotate[1]) all bits to the right by 1, then we
+ *  get a new integer where the left neighbor of a bit is now in its
+ *  position. Likewise if we shift all bits to the left, then we get
+ *  an integer representing the right neighbors. This gives us 3
+ *  integers where the left, center and right bits are in the same
+ *  position. For example, using only 8bits:
+ *
+ *  left:   0100 1011
+ *  center: 1001 0110
+ *  right:  0010 1101
+ *
+ *  Each pattern can be represented as a 3bit number, plus a 4th bit
+ *  to say whether it is active in a given rule. As we want to operate
+ *  on all 64bits at once in the left, right and center bit fields. We
+ *  can generate 64bit long masks from the value of each bit in a
+ *  given pattern.
+ *
+ *  So if we have a pattern where the left cell should be 1, then we
+ *  can create a 64bit mask of all 1s. If it should be zero, then all
+ *  zeroes. Likewise for the center and right cells. The masks can be
+ *  xor'ed[2] (^) with the corresponding cell fields to show if no
+ *  match occurred. That is the pattern is 1 and the cell is 0 or the
+ *  cell is 1 and the pattern is 0. We can invert this (~) to give 1
+ *  when a match occurs.
+ *
+ *  To see whether all components (left, right, center) of a pattern
+ *  matches we can bitwise and (&) them together. We can then bitwise
+ *  or[3] (|) the result of the pattern matches together to produce
+ *  the final values.
+ *
+ *  If we wish to operate on an automata larger than 64 cells, then we
+ *  can combine multiple ints in an array. After performing the left
+ *  and right shifts, we get the high or low bit from the next or
+ *  previous integers in the array. Then set the low and high bits of
+ *  the right and left bit fields.
+ *
+ *  To make the automata "reversible" an extra step can be added. We
+ *  look at a cell's previous (in addition to the current, left and
+ *  right) and if it was 1 then *invert* the next value. This is
+ *  equivalent to xor'ring the previous value with the next.
+ *
+ *  It is not entirely clear to me what the mathematical implications
+ *  are of being reversible. However it is important to physics and
+ *  makes some really cool patterns which mimic nature.
+ *
+ *  [1]: We perform a rotating shift which moves the end bit to the start.
+ *       This causes the automata to wrap around.
+ *  [2]: Combined with exclusive or.
+ *  [3]: Or we can use xor as the patterns are mutually exclusive, so
+ *       only one may match at a time for each bit.
+ */
 
 #include <stdlib.h>
 #include <errno.h>
 #include <gfxprim.h>
 
+/* If bit n is 1 then make all bits 1 otherwise 0 */
 #define BIT_TO_MAX(b, n) (((b >> n) & 1) * ~0UL)
 
 /* Number of bitfields in a row */
